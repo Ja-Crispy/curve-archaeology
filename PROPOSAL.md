@@ -160,7 +160,7 @@ Nothing downstream is trusted until the published results reproduce bit-exactly 
 - [ ] Shuffle-tooling regression tests (validate `solvers/shuffle.py` end to end, the way the seed tests validate the curve tooling): regenerate the MD2 S-table (RFC 1319) and both RC2 tables (RFC 2268; 828 π-digits, 21 discards each) from their digit-driven Fisher–Yates shuffles; reproduce the Kuznyechik/Streebog π from the TKlog over `0x11D` (the pilot confirmed this is the unique fit among all 3840 (polynomial, generator) pairs); recover a synthetic S-box set from a known `rand()` seed.
 
 **Benchmark** (fixes the Phase 1 budget)
-- [ ] `ellsea` early-abort and full-count timing at 192–521 bits (pilot numbers in Appendix A). The full six-run census (≈21,750 candidates) cost about 1.5 CPU-hours on 4 cores — two orders of magnitude below Rev. 1's "1 CPU-day on 32 cores". The real cost is engineering (period-software builds), not CPU.
+- [ ] `ellsea` early-abort and full-count timing at 192–521 bits (pilot numbers in Appendix A). The full six-run census (≈21,750 candidates) cost **46 CPU-minutes** (31 min wall, 2 processes) — one to two orders of magnitude below Rev. 1's "1 CPU-day on 32 cores". The real cost is engineering (period-software builds), not CPU.
 
 **Gate 0:** every regression test passes; the generator library reproduces its vectors; `reports/phase0.md` holds the benchmark table and the pinned-source manifest.
 
@@ -195,7 +195,7 @@ Nothing downstream is trusted until the published results reproduce bit-exactly 
 ### Step 1: freeze the dataset
 - [ ] Enumerate all six prime runs to max(8000, 1.2 × last published index). Store every candidate with: seed, c, whether b exists, both roots, early-abort outcome, and for full counts n, t, primality, bit lengths, MOV degree to 1023, the twist order.
 - [ ] Confirm the 21 acceptable candidates and the list of prime-order candidates rejected only by the bit-length rule. Any disagreement with Valsorda's list is a finding.
-- [ ] Decide the exact form of the length rule. `bitlen(n) ≤ bitlen(p)` and "n fits in the octets of p" differ only for P-521, where a 522-bit n still fits in 66 octets: check every prime-order P-521 candidate before 1136.
+- [ ] Decide the exact form of the length rule, but note (pilot) that it is **under-determined by the data**: in the P-192/224/384/521 runs `bitlen(n) ≤ bitlen(p)`, "trace positive", and "`n ≤ p`" coincide on *every* prime-order candidate found, so those runs cannot tell the three formulations apart. The **only** discriminating labels are four candidates in the prime239 run with `t < 0` and `n > p`: 1562, 2491, 2682 (skipped) and 2320 (published, prime239v2). A rule proposed for the filter must not merely re-state the length rule — check it against these four.
 - [ ] Freeze as `data/candidates/*.json`, hash it, record the hash in the registry. No Phase 1 hypothesis is evaluated before the freeze.
 
 ### Step 2: get more labels
@@ -211,7 +211,7 @@ Write each family to `registry/phase1_families.yaml` with its rule count before 
 | F1 | Era-computable auxiliary factorizations: is n−1, n+1, the twist order or t²−4p fully factored by bounded effort (rho, small ECM) | 8 | Pilot: negative |
 | F2 | Residues of n and t modulo 3, 4, 8 | 26 | Pilot: negative. Lead L1: all published have t mod 8 ∈ {5, 7}; 4 skipped also do |
 | F3 | Quadratic characters of x³−3x+b at x = ±1, ±2, ±3; root conventions of b | 9 | Pilot: negative |
-| F4 | Elkies/Atkin type of ℓ ≤ 23 for the curve | 8 | Pilot: negative. Lead L2: ℓ = 11 |
+| F4 | Elkies/Atkin type of ℓ ≤ 23 — computed from the trace (`ℓ` is Elkies iff `t²−4p` is a square mod `ℓ`), not from SEA internals, since the stack returns only the order | 8 | Pilot: negative. Lead L2: ℓ = 11 |
 | F5 | RNG-consumption walks: after event E the program swallows m more 20-byte blocks, E ∈ {b exists, b missing}, m ≤ 3 | 6 | Pilot: negative |
 | F6 | SEA cost proxies: least L with ∏ Elkies ℓ ≤ L exceeding 4√p; number of Atkin primes below it; size of the match-and-sort set | 6 | Open |
 | F7 | 2-power and 3-power torsion structure used by 1990s SEA code: t mod 16, t mod 9, splitting type of the 4- and 8-division polynomials, isogeny-volcano depth at 2 and 3 | 16 | Open |
@@ -222,6 +222,8 @@ Write each family to `registry/phase1_families.yaml` with its rule count before 
 Reserve: 89 rules for hypotheses raised by the mechanism and archive tracks.
 
 Adopt **DiSSECT's 22 traits** (Sedláček et al.) as the pre-computed baseline for F1–F4/F7 rather than re-deriving them, and its X9.62 simulation (5M seeds/size) as the null distribution; cite its published findings. Note that for the NIST filter the relevant features are of the *curve*, but one feature family generalizes to the national targets and is cheap here too: the **prime-structure group** — factor chains of `p−1` and `p+1` (recursive half-size factors, à la the GOST/Shawe-Taylor/Maurer generators), safe-prime test, residues mod 3/4/8/24, trailing-bit runs. For the NIST runs `p` is fixed per run so this is constant, but the group is carried into Phase 5 (it is how the pilot's CryptoPro-C result was found) and freezes here for uniformity.
+
+Two features are **dead** and must be dropped from the multiple-comparison budget (pilot): the MOV condition (`k ≤ 1023`) and the anomalous check never fire on any prime-order candidate in any run, so they carry zero information. The root convention is also not a filter on P-224 (`p ≡ 1 mod 4`, the two roots give isomorphic curves); it can only matter for the nine `p ≡ 3 mod 4` curves.
 
 ### Step 4: statistical protocol
 - [ ] Evaluate each family once, on the frozen data, with code committed before the run.
@@ -388,7 +390,7 @@ Phase 0 blocks everything. Phases 1, 2, 5 and 6 can then run in parallel; Phase 
 | Phase | Depends on | Dominant cost | Budget (revised from the pilot) |
 | --- | --- | --- | --- |
 | 0 | — | Building and verifying generators and period software | 3–5 days (engineering, not CPU) |
-| 1 | 0 | Census (done), then the mechanism and archive tracks | Census ≈ 1.5 CPU-h on 4 cores (**measured**); the work is analysis + archive, not compute |
+| 1 | 0 | Census (done), then the mechanism and archive tracks | Census 46 CPU-min, 31 min wall (**measured**); the work is analysis + archive, not compute |
 | 2 | 0 | Lattice/seed sweeps; FreeLIP sweeps | Hours to 1 CPU-day |
 | 3 | 0, 2 (survey) | Scalar mults for small `k` across SEC 2 | Minutes; residue analysis dominates |
 | 4-DualEC | 0, 2/3 (tooling) | Scalar mults over the seed space | Hours to ≈ 1 CPU-day; **strict disclosure gate** |
@@ -396,7 +398,7 @@ Phase 0 blocks everything. Phases 1, 2, 5 and 6 can then run in parallel; Phase 
 | 6 | 0 | Shuffle search over S-box sets | Time-boxed to 2 weeks |
 | 7 (write-up) | any gate passed | Writing | — |
 
-**Budget correction.** Rev. 1's "1 CPU-day on 32 cores" for Phase 1 overstated the cost by ~2 orders of magnitude: the full six-run census (≈21,750 candidates) was 1.5 CPU-hours on 4 cores (pilot, Appendix A). Early-abort SEA is sound here (0 false aborts on the validation sample, Appendix A). The real cost across the plan is engineering — building and bit-exactly validating the generator library and the period point-counting code — not CPU. Every job is embarrassingly parallel and checkpointable; GCP spot instances (`c3-highcpu`) are fine but modest. Each gate needs user sign-off before the next phase in its chain starts.
+**Budget correction.** Rev. 1's "1 CPU-day on 32 cores" for Phase 1 overstated the cost by one to two orders of magnitude: the full six-run census (≈21,750 candidates) was 46 CPU-minutes, 31 min wall with 2 processes (pilot, Appendix A); the extensions to index 8000 bring it to 75 CPU-minutes. Projected to 10,000 candidates per size, ≈9 minutes wall on 32 cores. Early-abort SEA is sound here (0 false aborts on the validation sample, Appendix A). The real cost across the plan is engineering — building and bit-exactly validating the generator library and the period point-counting code — not CPU. Every job is embarrassingly parallel and checkpointable; GCP spot instances (`c3-highcpu`) are fine but modest. Each gate needs user sign-off before the next phase in its chain starts.
 
 **Evidence-budget ledger.** `registry/budget.yaml` tracks cumulative `search_bits` per target, so margins stay honest as hypotheses accumulate. A full sweep of the generator catalogue against one 160-bit target is ≈ 2⁷⁶ ·⁶ hypotheses (margin 83) with 64-bit-state LCGs included, ≈ 2⁶¹ ·⁸ (margin 98) without — comfortably inside Tier A for a 160-bit target, but the Phase 1 labels (18.4 bits) and the S-box residues (≈50 bits) are not, and the plan says so up front.
 
@@ -444,7 +446,7 @@ Same-era, same-agency fingerprint targets surfaced by the review (for the genera
 2. **Evidence standard** rewritten: tiered margins with a capacity-first rule, because the flagship Phase 1 target carries only 18.4 bits of label information and can never meet a flat 64-bit bar. "Freedom in bits" (BADA55) and the S-box "anomaly" measure (Bonnetain–Perrin–Tian) are adopted as the units.
 3. **Phase 1** redesigned from "freeze a feature list" to "freeze a *mechanism* list" (deterministic curve features are essentially exhausted — 150+ on public record), with pre-registered rule families, a binary-run held-out label set, the extended census, and explicit capacity accounting.
 4. **Generator library and solvers** corrected and expanded (three-layer `gens/`, big-integer consumers, large-state `seed_sweep.py`, default-stream scan, FreeLIP CVP solver); the Rev. 1 "glibc TYPE_3" and the weak adapter were wrong.
-5. **Compute budget** cut ~100× for Phase 1 (measured 1.5 CPU-h, not 1 CPU-day on 32 cores); the real cost is engineering.
+5. **Compute budget** cut ~10–100× for Phase 1 (measured 46 CPU-min, not 1 CPU-day on 32 cores); the real cost is engineering.
 6. **Controls and prior-art import** made mandatory (rules 8, 12); a large public negative-result corpus is folded in (Appendix D) with a re-verification sample.
 7. **Disclosure** strengthened: a dedicated gate for the Dual_EC phase, and a novelty audit before any newness claim.
 
